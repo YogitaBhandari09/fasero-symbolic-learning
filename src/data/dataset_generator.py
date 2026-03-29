@@ -1,46 +1,83 @@
-import sympy as sp
-import random
+import argparse
 import json
+from pathlib import Path
+import random
+import sys
+
+import sympy as sp
 from tqdm import tqdm
 
-x = sp.symbols('x')
 
-base_functions = [
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+RAW_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "taylor_dataset.json"
+x = sp.symbols("x")
+
+BASE_FUNCTIONS = [
     sp.sin(x),
     sp.cos(x),
     sp.exp(x),
-    sp.log(1+x),
+    sp.log(1 + x),
     x,
     x**2,
-    x**3
+    x**3,
 ]
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate symbolic Taylor-series training data.")
+    parser.add_argument("--num-samples", type=int, default=5000, help="Number of samples to generate.")
+    parser.add_argument("--series-order", type=int, default=5, help="Taylor expansion order.")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed.")
+    return parser.parse_args()
+
+
+def set_seed(seed):
+    random.seed(seed)
+
+
 def generate_function():
-    f = random.choice(base_functions)
+    expression = random.choice(BASE_FUNCTIONS)
 
     if random.random() < 0.5:
-        g = random.choice(base_functions)
-        f = f + g
+        expression = expression + random.choice(BASE_FUNCTIONS)
 
-    return sp.simplify(f)
+    if random.random() < 0.3:
+        expression = expression - random.choice(BASE_FUNCTIONS)
 
-def taylor_expand(f):
-    series = sp.series(f, x, 0, 5)
-    series = series.removeO()
-    return sp.simplify(series)
+    return sp.simplify(expression)
 
-dataset = []
 
-for _ in tqdm(range(5000)):
-    f = generate_function()
-    taylor = taylor_expand(f)
+def taylor_expand(function_expr, series_order):
+    series = sp.series(function_expr, x, 0, series_order)
+    return sp.simplify(series.removeO())
 
-    dataset.append({
-        "function": str(f),
-        "taylor": str(taylor)
-    })
 
-with open("data/raw/taylor_dataset.json","w") as f:
-    json.dump(dataset,f,indent=2)
+def main():
+    args = parse_args()
+    set_seed(args.seed)
 
-print("Dataset generated!")
+    RAW_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    dataset = []
+
+    for _ in tqdm(range(args.num_samples), desc="Generating dataset"):
+        function_expr = generate_function()
+        taylor_expr = taylor_expand(function_expr, args.series_order)
+
+        dataset.append(
+            {
+                "function": str(function_expr),
+                "taylor": str(taylor_expr),
+            }
+        )
+
+    with RAW_DATA_PATH.open("w", encoding="utf-8") as output_file:
+        json.dump(dataset, output_file, indent=2)
+
+    print(f"Dataset generated with {len(dataset)} samples at {RAW_DATA_PATH}")
+
+
+if __name__ == "__main__":
+    main()
