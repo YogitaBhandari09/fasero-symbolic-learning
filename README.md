@@ -293,6 +293,12 @@ python src/evaluation/evaluate_model.py --model lstm --num-examples 100
 pip install -r requirements.txt
 ```
 
+## Repository Notes
+
+- `data/processed/dataset.json` is kept in the repository so reviewers can inspect the prepared tokenized dataset format directly.
+- Generated model checkpoints such as `lstm_model.pth` and `transformer_model.pth` are ignored via `.gitignore` because they are large reproducible artifacts.
+- Final reported evaluation numbers are documented in `experiments/results.md`.
+
 ## Requirements
 
 Current `requirements.txt`:
