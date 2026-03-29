@@ -1,3 +1,5 @@
+"""Evaluate trained symbolic seq2seq models and report readable metrics."""
+
 import argparse
 import json
 from pathlib import Path

@@ -1,3 +1,5 @@
+"""Train the Transformer baseline for symbolic Taylor expansion generation."""
+
 import json
 from pathlib import Path
 import random

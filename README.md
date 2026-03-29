@@ -1,219 +1,171 @@
 # FASEROH Symbolic Learning
 
-Neural sequence-to-sequence learning for symbolic mathematics, focused on mapping input expressions to their Taylor-series expansions. This project combines symbolic data generation with deep learning models so that algebraic structure can be learned as a translation problem.
+This project explores a simple but meaningful question: can a neural sequence model learn to translate a symbolic mathematical expression into its Taylor expansion?
 
-## Overview
+For this task, I treat symbolic mathematics as a sequence-to-sequence problem. The input is a function such as `sin(x)` or `exp(x) + x**2`, and the target is its Taylor expansion around `x = 0` up to fourth order. The project combines exact symbolic generation with SymPy and neural modeling with PyTorch, which makes it a good fit for neural-symbolic learning and for the FASEROH GSoC test task.
 
-This repository treats symbolic reasoning as a seq2seq task:
+## What This Project Does
 
-- Input: a symbolic mathematical expression such as `sin(x) + x**2`
-- Output: its Taylor expansion around `x = 0`
-- Objective: learn token-level symbolic translation with strong exact-sequence and symbolic-equivalence performance
+At a high level, the repository does four things:
 
-The project includes:
+- generates a synthetic dataset of symbolic functions and their Taylor expansions
+- tokenizes and encodes those expressions into sequences
+- trains both an LSTM model and a Transformer model
+- evaluates predictions using both surface-level and mathematical correctness
 
-- Synthetic dataset generation using SymPy
-- Tokenization and vocabulary building for symbolic expressions
-- An upgraded LSTM encoder-decoder baseline
-- An upgraded Transformer encoder-decoder model
-- Evaluation using token accuracy, exact match, and symbolic equivalence
-- A complete training and inference pipeline
+The final system is more than a minimal prototype. It includes a full training pipeline, reproducible preprocessing, validation-aware training, and symbolic evaluation.
 
-## Why This Project Matters
+## Why This Problem Is Interesting
 
-Symbolic learning sits at the intersection of:
+A lot of machine learning work focuses on numbers, labels, or natural language. Symbolic mathematics is different. Here, the output is structured, interpretable, and mathematically constrained. That makes the problem harder, but also much more interesting.
 
-- Deep learning
-- program induction
-- mathematical reasoning
-- scientific AI
-- neural-symbolic systems
+Taylor expansion is a good benchmark for this setting because:
 
-Instead of predicting only numeric values, this project predicts structured symbolic expressions. That makes it closer to mathematical reasoning, computer algebra, and interpretable AI than a standard regression or classification pipeline.
+- it is mathematically well defined
+- the target expressions are symbolic rather than numeric
+- it lets us compare exact syntax and true symbolic equivalence
+- it naturally fits a translation-style learning setup
 
 ## Core Idea
 
-We generate paired examples of the form:
+The system learns mappings of the form:
 
 ```text
 f(x) -> Taylor(f(x))
 ```
 
-Examples:
+Some examples:
 
 ```text
 sin(x)          -> x - x**3/6
 exp(x)          -> 1 + x + x**2/2 + x**3/6 + x**4/24
 log(1 + x)      -> x - x**2/2 + x**3/3 - x**4/4
-sin(x) + exp(x) -> combined symbolic expansion
+sin(x) + exp(x) -> symbolic expansion of the combined function
 ```
 
-The model learns to translate symbolic syntax into another symbolic syntax, similar to machine translation, but over mathematical expressions rather than natural language.
+The important part is that the model is not solving a numeric regression problem. It is learning to produce a valid symbolic expression token by token.
 
-## Project Architecture
+## Project Flow
 
 ```text
-raw symbolic expressions
+symbolic function
+    -> SymPy Taylor expansion
     -> tokenization
     -> vocabulary encoding
-    -> padded sequence dataset
+    -> padded dataset
     -> seq2seq training
-    -> auto-regressive decoding
-    -> symbolic evaluation with SymPy
+    -> autoregressive decoding
+    -> evaluation with token and symbolic metrics
 ```
 
-### Repository Structure
+## Repository Structure
 
 ```text
 fasero-symbolic-learning/
-├── data/
-│   ├── raw/
-│   └── processed/
-├── experiments/
-├── notebooks/
-├── src/
-│   ├── data/
-│   ├── evaluation/
-│   ├── models/
-│   ├── tokenization/
-│   ├── training/
-│   └── utils/
-├── README.md
-├── requirements.txt
-└── run.sh
+|-- data/
+|   |-- raw/
+|   `-- processed/
+|-- experiments/
+|-- notebooks/
+|-- src/
+|   |-- data/
+|   |-- evaluation/
+|   |-- models/
+|   |-- tokenization/
+|   |-- training/
+|   `-- utils/
+|-- README.md
+|-- requirements.txt
+`-- run.sh
 ```
 
-## Models
+## Main Components
 
-### 1. LSTM Seq2Seq
-
-The LSTM model is a recurrent encoder-decoder architecture for symbolic translation.
-
-Key characteristics:
-
-- learned token embeddings with padding awareness
-- stacked LSTM encoder and decoder
-- scheduled teacher forcing during training
-- dropout regularization
-- gradient clipping for stability
-
-This model is a strong baseline and is useful for showing how much improvement the Transformer gives.
-
-### 2. Transformer Seq2Seq
-
-The Transformer is the flagship model in the repository.
-
-Key characteristics:
-
-- multi-head self-attention
-- sinusoidal positional encoding
-- causal target masking for autoregressive decoding
-- source and target padding masks
-- AdamW optimization
-- validation-aware training with checkpointing and early stopping
-
-This is the best model in the project for most serious experiments and should be treated as the default architecture for final results.
-
-## Improvements Added In The Final Version
-
-The project now includes a much stronger training and evaluation stack than the original prototype:
-
-- robust path handling so scripts work from the repo root or direct file execution
-- validation split for both training pipelines
-- early stopping based on validation loss
-- best-model checkpoint saving
-- learning-rate scheduling with `ReduceLROnPlateau`
-- gradient clipping
-- label smoothing
-- padding-aware embeddings
-- improved Transformer masking
-- cleaner sequence metrics that ignore special tokens
-- model-selectable evaluation CLI
-- reproducible dataset generation with seed control
-- safer preprocessing with metadata and sequence-length checks
-
-## Tech Stack
-
-### Languages and Libraries
-
-- Python
-- PyTorch
-- SymPy
-- NumPy
-- tqdm
-- scikit-learn
-- matplotlib
-
-### What Each Technology Does
-
-- `PyTorch`: defines, trains, and evaluates the neural seq2seq models
-- `SymPy`: generates symbolic expressions and verifies symbolic equivalence
-- `NumPy`: general numerical support
-- `tqdm`: progress bars during dataset generation and long-running jobs
-- `scikit-learn`: available for future metrics and dataset analysis workflows
-- `matplotlib`: available for visualization and experiment reporting
-
-## Data Pipeline
-
-### Step 1. Dataset Generation
+### Dataset Generation
 
 File: [src/data/dataset_generator.py](d:/Gsoc/fasero-symbolic-learning/src/data/dataset_generator.py)
 
-This script:
+This script builds the raw dataset with SymPy. It samples from a small set of symbolic base functions such as:
 
-- samples symbolic base functions such as `sin(x)`, `cos(x)`, `exp(x)`, `log(1+x)`, `x`, `x**2`, `x**3`
-- composes them through addition and subtraction
-- computes Taylor expansions using SymPy
-- stores paired samples in `data/raw/taylor_dataset.json`
+- `sin(x)`
+- `cos(x)`
+- `exp(x)`
+- `log(1+x)`
+- `x`
+- `x**2`
+- `x**3`
 
-### Step 2. Tokenization
+It then combines them through addition and subtraction, computes the Taylor expansion around `x = 0`, and saves the function/expansion pairs to `data/raw/taylor_dataset.json`.
 
-File: [src/tokenization/tokenizer.py](d:/Gsoc/fasero-symbolic-learning/src/tokenization/tokenizer.py)
+### Tokenization and Vocabulary
 
-Expressions are split into symbolic tokens such as:
+Files:
+- [src/tokenization/tokenizer.py](d:/Gsoc/fasero-symbolic-learning/src/tokenization/tokenizer.py)
+- [src/tokenization/vocabulary.py](d:/Gsoc/fasero-symbolic-learning/src/tokenization/vocabulary.py)
 
-- operators: `+`, `-`, `*`, `**`, `/`
-- functions: `sin`, `cos`, `exp`, `log`
-- variables and constants: `x`, `1`, `2`, `3`, `24`
-- punctuation: `(`, `)`
-
-### Step 3. Vocabulary Building
-
-File: [src/tokenization/vocabulary.py](d:/Gsoc/fasero-symbolic-learning/src/tokenization/vocabulary.py)
-
-The vocabulary maps symbolic tokens to IDs and reserves:
+Expressions are broken into symbolic tokens such as function names, operators, constants, variables, and punctuation. A shared vocabulary is built over both source and target expressions, with special tokens for:
 
 - `PAD`
 - `START`
 - `END`
 
-### Step 4. Preprocessing
+### Preprocessing
 
 File: [src/data/preprocess.py](d:/Gsoc/fasero-symbolic-learning/src/data/preprocess.py)
 
-This script:
+The preprocessing step:
 
 - tokenizes raw expressions
-- builds a unified vocabulary
-- adds start/end tokens
-- pads sequences to a fixed maximum length
-- stores processed tensors plus metadata in `data/processed/dataset.json`
+- encodes them with the vocabulary
+- adds start and end markers
+- pads them to a fixed maximum length
+- stores processed data and metadata in `data/processed/dataset.json`
 
-## Training Pipeline
+## Models
+
+### LSTM Seq2Seq
+
+File: [src/models/lstm_seq2seq.py](d:/Gsoc/fasero-symbolic-learning/src/models/lstm_seq2seq.py)
+
+The LSTM model is the recurrent baseline. It uses:
+
+- learned embeddings
+- stacked LSTM encoder and decoder layers
+- scheduled teacher forcing
+- dropout
+- gradient clipping during training
+
+This model is useful as a solid baseline and as a comparison point for the Transformer.
+
+### Transformer Seq2Seq
+
+File: [src/models/transformer_seq2seq.py](d:/Gsoc/fasero-symbolic-learning/src/models/transformer_seq2seq.py)
+
+The Transformer is the main model in the repository. It uses:
+
+- learned token embeddings
+- sinusoidal positional encodings
+- multi-head attention
+- causal masks for decoding
+- padding-aware attention masks
+
+This is the model I would present as the strongest version of the project.
+
+## Training
 
 ### LSTM Training
 
 File: [src/training/train_lstm.py](d:/Gsoc/fasero-symbolic-learning/src/training/train_lstm.py)
 
-Training features:
+Features included in the final version:
 
 - train/validation split
-- scheduled teacher forcing
 - AdamW optimizer
+- scheduled teacher forcing
 - label smoothing
 - gradient clipping
 - early stopping
-- best checkpoint saving to `lstm_model.pth`
+- best-checkpoint saving
 
 Run:
 
@@ -225,15 +177,15 @@ python src/training/train_lstm.py
 
 File: [src/training/train_transformer.py](d:/Gsoc/fasero-symbolic-learning/src/training/train_transformer.py)
 
-Training features:
+Features included in the final version:
 
 - train/validation split
 - AdamW optimizer
-- padding-aware attention masks
+- learning-rate scheduling
 - label smoothing
 - gradient clipping
 - early stopping
-- best checkpoint saving to `transformer_model.pth`
+- best-checkpoint saving
 
 Run:
 
@@ -241,17 +193,17 @@ Run:
 python src/training/train_transformer.py
 ```
 
-## Evaluation Pipeline
+## Evaluation
 
 File: [src/evaluation/evaluate_model.py](d:/Gsoc/fasero-symbolic-learning/src/evaluation/evaluate_model.py)
 
-The evaluation script supports both architectures and performs autoregressive decoding before scoring predictions.
-
-Metrics:
+The evaluation script supports both models and scores them using:
 
 - token accuracy
-- exact sequence match
-- symbolic equivalence using SymPy simplification
+- exact match
+- symbolic match with SymPy simplification
+
+That last metric is especially important here. Two expressions can look different at the token level but still be mathematically equivalent, so symbolic verification gives a much fairer picture of model quality.
 
 Run:
 
@@ -260,18 +212,35 @@ python src/evaluation/evaluate_model.py --model transformer --num-examples 100
 python src/evaluation/evaluate_model.py --model lstm --num-examples 100
 ```
 
-## How The System Works End To End
+## How It Works End To End
 
-1. `dataset_generator.py` creates raw symbolic function/expansion pairs.
-2. `preprocess.py` tokenizes them, builds a vocabulary, and encodes sequences.
-3. `train_lstm.py` or `train_transformer.py` trains a seq2seq model on the processed dataset.
-4. During inference, the decoder starts from `START` and predicts one token at a time until `END`.
-5. `evaluate_model.py` converts predicted token IDs back to symbolic strings.
-6. Metrics compare predicted output to the target both syntactically and symbolically.
+1. Raw symbolic expressions are generated with SymPy.
+2. Their fourth-order Taylor expansions are computed exactly.
+3. Both source and target expressions are tokenized.
+4. Tokens are encoded into padded integer sequences.
+5. The LSTM or Transformer is trained to predict the target sequence from the input sequence.
+6. During inference, the decoder generates one token at a time until it emits `END`.
+7. Predictions are compared to targets using token-level and symbolic metrics.
 
-## Recommended Best Workflow
+## Final Improvements Added
 
-For the strongest project presentation and best expected results:
+Compared with the original prototype, the final version is much more complete and much easier to present as serious project work. Improvements include:
+
+- more reliable path handling
+- reproducible dataset generation
+- validation-aware training
+- early stopping
+- checkpoint saving
+- learning-rate scheduling
+- gradient clipping
+- label smoothing
+- padding-aware embeddings and masks
+- cleaner evaluation metrics
+- a stronger README and results report
+
+## Recommended Workflow
+
+If you want to run the strongest version of the project from scratch:
 
 ```bash
 python src/data/dataset_generator.py --num-samples 5000 --series-order 5 --seed 42
@@ -280,11 +249,13 @@ python src/training/train_transformer.py
 python src/evaluation/evaluate_model.py --model transformer --num-examples 100
 ```
 
-If you want to compare baselines:
+If you want to compare both architectures:
 
 ```bash
 python src/training/train_lstm.py
+python src/training/train_transformer.py
 python src/evaluation/evaluate_model.py --model lstm --num-examples 100
+python src/evaluation/evaluate_model.py --model transformer --num-examples 100
 ```
 
 ## Installation
@@ -295,53 +266,45 @@ pip install -r requirements.txt
 
 ## Repository Notes
 
-- `data/processed/dataset.json` is kept in the repository so reviewers can inspect the prepared tokenized dataset format directly.
-- Generated model checkpoints such as `lstm_model.pth` and `transformer_model.pth` are ignored via `.gitignore` because they are large reproducible artifacts.
-- Final reported evaluation numbers are documented in `experiments/results.md`.
+- `data/processed/dataset.json` is committed so reviewers can inspect the processed data format directly.
+- Generated checkpoint files such as `lstm_model.pth` and `transformer_model.pth` are ignored via `.gitignore`.
+- Final metrics and example outputs are documented in [experiments/results.md](d:/Gsoc/fasero-symbolic-learning/experiments/results.md#L1).
 
-## Requirements
+## Tech Stack
 
-Current `requirements.txt`:
-
-- torch
-- numpy
-- sympy
+- Python
+- PyTorch
+- SymPy
+- NumPy
 - tqdm
 - scikit-learn
 - matplotlib
 
-## Research and GSoC Value
+## Why This Is A Strong GSoC Submission
 
-This project demonstrates:
+This project completes the required task, but it also goes further. It does not stop at “train two models.” It includes:
 
-- neural translation over symbolic programs
-- a reproducible data-generation to evaluation pipeline
-- comparison between recurrent and attention-based architectures
-- symbolic verification beyond surface token matching
-- an interpretable neural-symbolic workflow suitable for academic extension
+- reproducible dataset generation
+- a clean preprocessing pipeline
+- two working seq2seq baselines
+- meaningful evaluation metrics
+- symbolic verification
+- stronger training stability
+- polished documentation and reporting
 
-It is a strong GSoC-style project because it combines:
+In other words, it shows both implementation ability and project maturity.
 
-- mathematical depth
-- machine learning engineering
-- symbolic AI
-- reproducibility
-- research-facing evaluation
+## Future Directions
 
-## Future Extensions
-
-The most promising next upgrades would be:
+If this project were extended further, the most natural next steps would be:
 
 - beam search decoding
 - larger and more diverse symbolic datasets
 - curriculum learning by expression complexity
-- exact symbolic canonicalization before scoring
-- attention visualizations
-- experiment tracking and result dashboards
-- support for integration, differentiation, simplification, or equation solving tasks
+- canonical symbolic normalization before evaluation
+- additional tasks such as differentiation, simplification, or integration
+- experiment dashboards and visualizations
 
-## Final Summary
+## Closing Note
 
-FASEROH Symbolic Learning is a neural-symbolic seq2seq system for learning symbolic Taylor expansions from mathematical expressions. It uses SymPy for data generation and symbolic verification, PyTorch for deep learning, and both LSTM and Transformer architectures for sequence modeling. The final upgraded version of the project includes stronger training stability, better evaluation, reproducible preprocessing, and a cleaner research-grade project structure.
-
-If you want the best model in this repository, use the Transformer pipeline as the primary result model and keep the LSTM as the comparative baseline.
+FASEROH Symbolic Learning is a compact neural-symbolic project with a clear problem, a full working pipeline, and strong final results. The Transformer is the best final model, while the LSTM provides a useful comparison baseline. Together, they make the project both technically complete and easy to explain in a GSoC setting.

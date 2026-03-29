@@ -1,14 +1,16 @@
+"""Simple regex-based tokenizer for symbolic math expressions."""
+
 import re
 
-def tokenize(expr):
 
-    tokens = re.findall(r'\d+|[a-zA-Z]+|\*\*|\S', expr)
+TOKEN_PATTERN = r"\d+|[a-zA-Z]+|\*\*|\S"
 
-    return tokens
+
+def tokenize(expression):
+    """Split a symbolic expression into model-friendly tokens."""
+    return re.findall(TOKEN_PATTERN, expression)
 
 
 if __name__ == "__main__":
-
-    expr = "x - x**3/6"
-
-    print(tokenize(expr))
+    example_expression = "x - x**3/6"
+    print(tokenize(example_expression))
