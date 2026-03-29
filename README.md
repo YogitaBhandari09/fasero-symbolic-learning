@@ -1,25 +1,47 @@
 # FASEROH Symbolic Learning
 
-FASEROH Symbolic Learning is a neural-symbolic learning project built around a simple question: can a sequence model learn to generate the Taylor expansion of a symbolic mathematical expression?
+What happens if we treat symbolic mathematics like translation?
 
-The project was developed as a sequence-to-sequence system for symbolic mathematics. Given an input expression such as `sin(x)` or `exp(x) + x**2`, the model predicts its Taylor expansion around `x = 0` up to fourth order. The full pipeline combines exact symbolic computation through SymPy with neural modeling in PyTorch, making it a natural fit for the broader goals of FASEROH, where interpretable mathematical structure matters.
+That is the core idea behind this repository: take a symbolic expression as input, and generate its Taylor expansion as an output sequence. It is a small problem compared to the full ML4SCI FASEROH setting, but it captures the part I found most interesting while building the project: once the model has to produce a symbolic formula, token-level accuracy stops being enough and mathematical correctness starts to matter.
 
-## Why This Matters
+## Quick Summary
 
-Many machine learning systems are very good at fitting numbers, labels, and patterns in data, but symbolic reasoning is a different kind of challenge. In symbolic learning, the output must preserve structure, syntax, and mathematical meaning. That is important not only for mathematics itself, but also for scientific and physics-oriented workflows where formulas, expansions, and transformations are central to the way knowledge is represented.
+- **Task:** learn fourth-order Taylor expansions of symbolic expressions around `x = 0`
+- **Models:** LSTM seq2seq baseline and Transformer seq2seq model
+- **Main takeaway:** both models learn the controlled task well, but the Transformer is the more convincing choice once the symbolic space becomes richer
+- **Evaluation:** token accuracy, exact match, and symbolic equivalence with SymPy
+- **Why this matters for FASEROH:** the current project focuses on the symbolic decoding side of the larger histogram-to-symbolic mapping problem
 
-Within the FASEROH context, this matters because symbolic models are much closer to the kinds of structured reasoning used in theoretical physics, computational science, and equation-based modeling than ordinary black-box predictors. A model that can translate one expression into another meaningful expression is more interpretable, easier to analyze, and closer to tools used in real mathematical research.
+## Quick Start
 
-Taylor expansion is a particularly good testbed for this setting because it is:
+If you want to run the full pipeline end to end:
 
-- mathematically precise
-- symbolic rather than numeric
-- easy to validate exactly with computer algebra
-- rich enough to test real sequence modeling behavior
+```bash
+pip install -r requirements.txt
+python src/data/dataset_generator.py --num-samples 5000 --series-order 5 --seed 42
+python src/data/preprocess.py --max-len 30
+python src/training/train_transformer.py
+python src/evaluation/evaluate_model.py --model transformer --num-examples 100
+```
 
-## Project Goal
+To compare both models:
 
-The central learning task is:
+```bash
+python src/training/train_lstm.py
+python src/training/train_transformer.py
+python src/evaluation/evaluate_model.py --model lstm --num-examples 100
+python src/evaluation/evaluate_model.py --model transformer --num-examples 100
+```
+
+## Why I Built This
+
+I wanted a project that was small enough to finish properly, but still close enough to the kind of reasoning FASEROH cares about. Taylor expansion turned out to be a good middle ground. It is symbolic, structured, easy to validate exactly, and still hard enough that model behavior is visible when something goes wrong.
+
+One practical lesson from building it was that symbolic tasks expose shortcuts quickly. A model can look good on surface metrics while still failing in mathematically obvious ways. That pushed me to make symbolic evaluation a first-class part of the project instead of treating it like a nice extra.
+
+## Problem Setup
+
+The learning task is:
 
 ```text
 f(x) -> Taylor(f(x))
@@ -34,40 +56,36 @@ log(1 + x)      -> x - x**2/2 + x**3/3 - x**4/4
 sin(x) + exp(x) -> symbolic expansion of the combined function
 ```
 
-This is not a regression task. The model must generate a valid symbolic sequence token by token and preserve the mathematical content of the target expression.
+I frame this as sequence-to-sequence learning:
 
-## What The Repository Contains
+- the source sequence is the tokenized symbolic input
+- the target sequence is the tokenized Taylor expansion
+- the decoder generates the target one token at a time
 
-The repository includes:
+## Why This Matters
 
-- symbolic dataset generation with SymPy
-- tokenization and vocabulary construction for symbolic expressions
-- a full preprocessing pipeline
-- an LSTM encoder-decoder baseline
-- a Transformer encoder-decoder model
-- evaluation with token accuracy, exact match, and symbolic equivalence
+Most machine learning projects only need the model to predict a number, a class, or a continuous vector. Symbolic learning is different. The output has syntax, structure, and mathematical meaning. That makes it closer to how equations are actually used in physics and scientific modeling.
 
-## Research Framing
+In the broader FASEROH context, the real interest is not Taylor expansion by itself. The more interesting goal is recovering symbolic structure from scientific data. That is why I treated this repository as more than a toy benchmark: it is a clean way to study the symbolic generation side of that problem.
 
-This project can be viewed as a compact neural-symbolic translation system. Instead of translating English to French, it translates one mathematical expression into another mathematically meaningful form. That makes it relevant to:
+## Key Contributions
 
-- neural-symbolic AI
-- mathematical machine learning
-- symbolic regression and program induction
-- equation-based scientific computing
-- interpretable learning for physics and applied mathematics
+- Built a complete symbolic data generation pipeline with SymPy
+- Implemented tokenization, vocabulary construction, and sequence preprocessing
+- Trained and compared two sequence models: LSTM and Transformer
+- Added symbolic evaluation using SymPy simplification
+- Made the pipeline reproducible and easy to rerun from scratch
+- Documented the project in a way that makes the design choices inspectable
 
 ## System Overview
-
-The full workflow is:
 
 ```text
 symbolic expression
     -> exact Taylor expansion with SymPy
     -> tokenization
     -> vocabulary encoding
-    -> padded sequence dataset
-    -> seq2seq model training
+    -> padded dataset
+    -> seq2seq training
     -> autoregressive decoding
     -> symbolic evaluation
 ```
@@ -95,11 +113,11 @@ fasero-symbolic-learning/
 
 ## Data Pipeline
 
-### 1. Symbolic Dataset Generation
+### Symbolic Dataset Generation
 
 File: [src/data/dataset_generator.py](d:/Gsoc/fasero-symbolic-learning/src/data/dataset_generator.py)
 
-The raw dataset is created with SymPy. The generator samples from a small family of symbolic base functions such as:
+The dataset is generated with SymPy from a small family of base functions:
 
 - `sin(x)`
 - `cos(x)`
@@ -109,40 +127,38 @@ The raw dataset is created with SymPy. The generator samples from a small family
 - `x**2`
 - `x**3`
 
-These expressions are composed through addition and subtraction, then expanded around `x = 0` to produce paired function/Taylor-series examples.
+These are combined through addition and subtraction and then expanded around `x = 0`. I kept the function family intentionally small at first because it made debugging much easier. When a prediction failed, it was still possible to inspect the expression by hand and see whether the issue came from tokenization, data generation, or decoding.
 
-### 2. Tokenization
+### Tokenization and Vocabulary
 
-File: [src/tokenization/tokenizer.py](d:/Gsoc/fasero-symbolic-learning/src/tokenization/tokenizer.py)
+Files:
+- [src/tokenization/tokenizer.py](d:/Gsoc/fasero-symbolic-learning/src/tokenization/tokenizer.py)
+- [src/tokenization/vocabulary.py](d:/Gsoc/fasero-symbolic-learning/src/tokenization/vocabulary.py)
 
-Expressions are split into symbolic tokens, including:
+Expressions are split into symbolic tokens such as:
 
-- functions such as `sin`, `cos`, `exp`, `log`
-- operators such as `+`, `-`, `*`, `**`, `/`
-- variables and constants such as `x`, `1`, `2`, `3`
-- punctuation such as `(` and `)`
+- function names: `sin`, `cos`, `exp`, `log`
+- operators: `+`, `-`, `*`, `**`, `/`
+- variables and constants: `x`, `1`, `2`, `3`
+- punctuation: `(`, `)`
 
-### 3. Vocabulary Construction
-
-File: [src/tokenization/vocabulary.py](d:/Gsoc/fasero-symbolic-learning/src/tokenization/vocabulary.py)
-
-A shared vocabulary is built across both source and target sequences, with reserved tokens for:
+The vocabulary is shared across source and target sequences and includes:
 
 - `PAD`
 - `START`
 - `END`
 
-### 4. Preprocessing
+### Preprocessing
 
 File: [src/data/preprocess.py](d:/Gsoc/fasero-symbolic-learning/src/data/preprocess.py)
 
 The preprocessing stage:
 
-- tokenizes raw symbolic expressions
-- converts them into token IDs
+- tokenizes raw expressions
+- converts tokens to integer IDs
 - adds start and end markers
-- pads all sequences to a fixed length
-- stores the final processed dataset in `data/processed/dataset.json`
+- pads sequences to a fixed length
+- stores the processed dataset in `data/processed/dataset.json`
 
 ## Models
 
@@ -150,15 +166,15 @@ The preprocessing stage:
 
 File: [src/models/lstm_seq2seq.py](d:/Gsoc/fasero-symbolic-learning/src/models/lstm_seq2seq.py)
 
-The LSTM model serves as a recurrent baseline. It uses:
+The LSTM model is the recurrent baseline. It uses:
 
 - learned token embeddings
-- stacked LSTM encoder and decoder layers
+- stacked encoder and decoder LSTMs
 - scheduled teacher forcing
-- dropout regularization
+- dropout
 - gradient clipping during training
 
-This model provides an interpretable baseline for comparison with the Transformer.
+I kept this model in the project because a baseline matters. On a controlled symbolic task, it is useful to know whether the Transformer is helping for the right reasons or whether the dataset is simply easy enough that almost any decent seq2seq model can do well.
 
 ### Transformer Seq2Seq
 
@@ -167,12 +183,12 @@ File: [src/models/transformer_seq2seq.py](d:/Gsoc/fasero-symbolic-learning/src/m
 The Transformer is the main model in the repository. It uses:
 
 - learned token embeddings
-- sinusoidal positional encodings
+- sinusoidal positional encoding
 - multi-head attention
 - causal decoding masks
 - padding-aware attention masks
 
-This architecture is the strongest final model in the project and the one most suitable for presentation as the primary result.
+This is the model I would choose as the primary architecture for any extension of the project. It handles longer dependencies more cleanly and is a better match for more open-ended symbolic generation.
 
 ## Training Setup
 
@@ -183,7 +199,7 @@ File: [src/training/train_lstm.py](d:/Gsoc/fasero-symbolic-learning/src/training
 The LSTM training pipeline includes:
 
 - train/validation split
-- AdamW optimization
+- AdamW optimizer
 - scheduled teacher forcing
 - label smoothing
 - gradient clipping
@@ -203,7 +219,7 @@ File: [src/training/train_transformer.py](d:/Gsoc/fasero-symbolic-learning/src/t
 The Transformer training pipeline includes:
 
 - train/validation split
-- AdamW optimization
+- AdamW optimizer
 - learning-rate scheduling
 - label smoothing
 - gradient clipping
@@ -220,13 +236,13 @@ python src/training/train_transformer.py
 
 File: [src/evaluation/evaluate_model.py](d:/Gsoc/fasero-symbolic-learning/src/evaluation/evaluate_model.py)
 
-The evaluation pipeline scores model predictions using:
+The evaluation script reports:
 
 - token accuracy
 - exact match
 - symbolic match through SymPy simplification
 
-The symbolic metric is especially important. Two expressions may differ at the token level while still representing the same mathematical object. Using symbolic equivalence makes the evaluation more meaningful and much closer to how a scientific user would judge correctness.
+For this kind of task, symbolic match is the most informative metric. Two expressions may differ token by token and still represent the same function. That happened often enough during debugging that I stopped trusting exact-match results by themselves.
 
 Run:
 
@@ -237,35 +253,76 @@ python src/evaluation/evaluate_model.py --model lstm --num-examples 100
 
 ## Results
 
-Evaluation on a 100-example slice produced the following scores:
+On the current evaluation slice, both models score very highly. I do not interpret that as “the problem is solved.” The dataset is only 5000 examples, the function family is narrow, and many patterns repeat in related forms. Under those conditions, high scores are expected.
 
-### LSTM
+The more realistic reading is:
 
-- Average token accuracy: `1.0000`
-- Exact match: `1.0000`
-- Symbolic match: `1.0000`
+- the models are learning the symbolic mapping successfully on a controlled dataset
+- the current benchmark is not difficult enough to separate the two models sharply
+- the Transformer still looks like the better long-term choice once the expressions become more diverse and less templated
 
-### Transformer
+That last point matters. Even when the headline scores are similar, the Transformer is still the model I trust more for a harder version of the task because:
 
-- Average token accuracy: `1.0000`
-- Exact match: `1.0000`
-- Symbolic match: `1.0000`
+1. it handles longer-range symbolic dependencies more naturally
+2. it should scale better as the function space becomes richer
+3. it is a closer fit to the sequence-generation setting that FASEROH will eventually require
 
-Representative predictions and a compact results summary are documented in [experiments/results.md](d:/Gsoc/fasero-symbolic-learning/experiments/results.md#L1).
+Detailed examples and the current evaluation summary are in [experiments/results.md](d:/Gsoc/fasero-symbolic-learning/experiments/results.md#L1).
 
-These results show that the system is able to learn the structure of the symbolic mapping very effectively on the evaluated slice, while also preserving true mathematical correctness.
+## Extension Toward Histogram-to-Symbolic Mapping
 
-## How The System Works End To End
+This repository is not the full FASEROH task, but it is closely related to it.
 
-1. SymPy generates symbolic expressions and their fourth-order Taylor expansions.
-2. The expressions are tokenized into symbolic units.
-3. Tokens are converted into integer sequences through a shared vocabulary.
-4. The sequences are padded and stored as a processed dataset.
-5. An LSTM or Transformer is trained to translate source sequences into target sequences.
-6. During inference, the decoder generates one token at a time until it predicts `END`.
-7. Predictions are evaluated both syntactically and symbolically.
+The larger ML4SCI FASEROH direction is closer to:
 
-## Recommended Workflow
+```text
+histogram or distribution-like input
+    -> learned encoder representation
+    -> sequence decoder / transformer
+    -> symbolic function
+```
+
+That can be viewed as:
+
+- **histogram:** a structured sequence of binned information
+- **encoder:** learns a useful latent representation of that sequence
+- **decoder:** generates a symbolic expression token by token
+
+The current project already covers much of the symbolic side of that pipeline:
+
+- symbolic output representation
+- autoregressive decoding
+- symbolic evaluation
+- model comparison between recurrent and attention-based approaches
+
+In other words, this repository does not solve the histogram-input side yet, but it already tackles the part that is usually harder to evaluate cleanly: generating and validating symbolic outputs.
+
+## Limitations
+
+The current version has some clear limitations:
+
+- the dataset is small
+- the function space is narrow
+- the decoder has no explicit grammar constraints
+- the evaluation slice is easy enough that overfitting is a real possibility
+- symbolic validity is checked after decoding rather than enforced during decoding
+
+I think being explicit about these limitations is important. The project works, but the current benchmark is still controlled and modest in scope.
+
+## Proposed Improvements
+
+The next steps I would prioritize are:
+
+- grammar-constrained decoding
+- beam search instead of greedy decoding
+- a functional loss based on numerical consistency at sampled points
+- larger and more diverse symbolic datasets
+- curriculum learning by expression complexity
+- extension from symbolic-sequence input to histogram-based input
+
+Among these, the histogram-input extension and grammar-aware decoding feel the most important if the goal is to move closer to the actual FASEROH setting.
+
+## Reproducibility
 
 To run the main pipeline from scratch:
 
@@ -276,7 +333,7 @@ python src/training/train_transformer.py
 python src/evaluation/evaluate_model.py --model transformer --num-examples 100
 ```
 
-To compare both architectures:
+To compare both models:
 
 ```bash
 python src/training/train_lstm.py
@@ -293,9 +350,9 @@ pip install -r requirements.txt
 
 ## Repository Notes
 
-- `data/processed/dataset.json` is included so that reviewers can inspect the processed symbolic data format directly.
-- Checkpoint files such as `lstm_model.pth` and `transformer_model.pth` are ignored via `.gitignore`.
-- The final reported metrics are documented in [experiments/results.md](d:/Gsoc/fasero-symbolic-learning/experiments/results.md#L1).
+- `data/processed/dataset.json` is included so reviewers can inspect the processed data format directly
+- checkpoint files such as `lstm_model.pth` and `transformer_model.pth` are ignored via `.gitignore`
+- final metrics and example outputs are summarized in [experiments/results.md](d:/Gsoc/fasero-symbolic-learning/experiments/results.md#L1)
 
 ## Tech Stack
 
@@ -307,36 +364,8 @@ pip install -r requirements.txt
 - scikit-learn
 - matplotlib
 
-## Relevance To FASEROH
+## Closing Remarks
 
-This project connects naturally to FASEROH because it focuses on mathematically structured learning rather than purely statistical prediction. The work is small in scale, but the direction is important: learning transformations of symbolic expressions is much closer to scientific reasoning than many standard machine learning benchmarks.
+I built this project to be small enough to finish carefully, but still serious enough to say something useful about symbolic generation. It helped me understand where sequence modeling works well, where evaluation becomes tricky, and why symbolic correctness has to be treated differently from ordinary token prediction.
 
-In a physics or theoretical modeling setting, symbolic manipulation appears everywhere: approximations, expansions, simplifications, and algebraic transformations are all part of everyday reasoning. A system that can learn to operate in that space, even on a compact benchmark like Taylor expansion, is a useful step toward more general symbolic tools for scientific machine learning.
-
-## Why This Is A Strong Submission
-
-This repository does not only satisfy the minimum task statement. It also presents the work in a reproducible and research-oriented form. It includes:
-
-- exact dataset generation with SymPy
-- two working seq2seq architectures
-- a clean preprocessing pipeline
-- mathematically meaningful evaluation
-- documented results
-- readable code and documentation suitable for review
-
-That combination makes the project easier for mentors to inspect, reproduce, and discuss.
-
-## Future Directions
-
-Natural next steps for this project would include:
-
-- beam search decoding
-- larger and more varied symbolic datasets
-- curriculum learning by expression complexity
-- canonical symbolic normalization before evaluation
-- extension to differentiation, simplification, integration, or equation solving
-- visualization and experiment tracking
-
-## Closing Note
-
-FASEROH Symbolic Learning is a focused neural-symbolic project that brings together symbolic mathematics, sequence modeling, and scientific interpretability. The Transformer provides the strongest final model, while the LSTM remains a useful baseline. Together, they show that even a compact system can capture meaningful symbolic structure when the problem, data, and evaluation are designed carefully.
+As a standalone repository, it is a compact neural-symbolic benchmark. As preparation for FASEROH, it helped me focus on the part of the problem where the model has to produce a mathematically meaningful symbolic expression rather than just a numerical answer.
